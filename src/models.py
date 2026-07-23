@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import re
 from typing import Any
 
 
@@ -45,6 +46,10 @@ class Period:
     def difficulty_name(self) -> str:
         return {1: "普通", 2: "挑战"}.get(self.period_type, "其他")
 
+    @property
+    def team_size_name(self) -> str:
+        return {1: "十人", 2: "五人"}.get(self.dungeon_type, "其他")
+
 
 @dataclass(frozen=True)
 class RankingEntry:
@@ -67,9 +72,28 @@ class RankingEntry:
 
 
 @dataclass(frozen=True)
+class RankAggregate:
+    start_rank: int
+    end_rank: int
+    duration: str
+
+    @property
+    def rank_label(self) -> str:
+        if self.start_rank == self.end_rank:
+            return str(self.start_rank)
+        return f"{self.start_rank}-{self.end_rank}"
+
+
+@dataclass(frozen=True)
 class RankBoard:
     period: Period
     entries: tuple[RankingEntry, ...]
+
+    def top_entries(self, limit: int = 20) -> tuple[RankingEntry, ...]:
+        return self.entries[:limit]
+
+    def aggregate_tail(self, top_limit: int = 20) -> tuple[RankAggregate, ...]:
+        return aggregate_entries(self.entries[top_limit:])
 
 
 @dataclass(frozen=True)
@@ -114,10 +138,50 @@ def select_latest_four_periods(values: list[dict[str, Any]]) -> tuple[Period, ..
     return tuple(selected)
 
 
-def parse_entries(values: list[dict[str, Any]], limit: int = 10) -> tuple[RankingEntry, ...]:
+def parse_entries(
+    values: list[dict[str, Any]],
+    limit: int | None = None,
+) -> tuple[RankingEntry, ...]:
     entries = [RankingEntry.from_api(value) for value in values]
     entries.sort(key=lambda entry: entry.rank)
-    return tuple(entries[:limit])
+    if limit is not None:
+        entries = entries[:limit]
+    return tuple(entries)
+
+
+def aggregate_entries(
+    entries: tuple[RankingEntry, ...],
+) -> tuple[RankAggregate, ...]:
+    aggregates: list[RankAggregate] = []
+    for entry in entries:
+        previous = aggregates[-1] if aggregates else None
+        if (
+            previous
+            and previous.duration == entry.duration
+            and previous.end_rank + 1 == entry.rank
+        ):
+            aggregates[-1] = RankAggregate(
+                start_rank=previous.start_rank,
+                end_rank=entry.rank,
+                duration=previous.duration,
+            )
+        else:
+            aggregates.append(
+                RankAggregate(
+                    start_rank=entry.rank,
+                    end_rank=entry.rank,
+                    duration=entry.duration,
+                )
+            )
+    return tuple(aggregates)
+
+
+def compact_duration(value: str) -> str:
+    match = re.fullmatch(r"(\d+)分(\d+)秒", value)
+    if not match:
+        return value
+    minutes, seconds = match.groups()
+    return f"{int(minutes)}:{int(seconds):02d}"
 
 
 def format_snapshot_time(value: str) -> str:
@@ -125,4 +189,3 @@ def format_snapshot_time(value: str) -> str:
         return datetime.strptime(value, "%Y%m%d%H%M%S").strftime("%Y-%m-%d %H:%M")
     except (TypeError, ValueError):
         return value or "未知"
-

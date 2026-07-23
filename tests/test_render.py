@@ -9,7 +9,7 @@ from src.render import RankRenderer
 
 
 class RenderTests(unittest.TestCase):
-    def test_renders_nonblank_four_board_image(self):
+    def setUp(self):
         boards = []
         for board_index in range(4):
             period = Period(
@@ -28,26 +28,44 @@ class RenderTests(unittest.TestCase):
                 RankingEntry(
                     rank=rank,
                     team_name=f"测试队伍{rank}",
-                    duration=f"{rank + 3}分{rank}秒",
+                    duration=(
+                        f"{rank + 3}分{rank}秒"
+                        if rank <= 20
+                        else "8分11秒"
+                    ),
                     snapshot_time="20260723130000",
                 )
-                for rank in range(1, 11)
+                for rank in range(1, 31)
             )
             boards.append(RankBoard(period=period, entries=entries))
 
-        snapshot = RankSnapshot(
+        self.snapshot = RankSnapshot(
             boards=tuple(boards),
             updated_at="2026-07-23 13:00",
         )
 
+    def test_renders_nonblank_four_board_overview(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "rank.png"
-            RankRenderer().render(snapshot, str(output))
+            RankRenderer().render_overview(self.snapshot, str(output))
             with Image.open(output) as image:
-                self.assertEqual(image.size, (1440, 1680))
+                self.assertEqual(image.width, 2760)
+                self.assertGreater(image.height, 1000)
+                self.assertGreater(len(image.getcolors(maxcolors=1_000_000)), 10)
+
+    def test_renders_nonblank_detail(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "detail.png"
+            RankRenderer().render_detail(
+                self.snapshot.boards[0],
+                self.snapshot.updated_at,
+                str(output),
+            )
+            with Image.open(output) as image:
+                self.assertEqual(image.width, 1120)
+                self.assertGreater(image.height, 1000)
                 self.assertGreater(len(image.getcolors(maxcolors=1_000_000)), 10)
 
 
 if __name__ == "__main__":
     unittest.main()
-

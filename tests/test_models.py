@@ -1,6 +1,8 @@
 import unittest
 
 from src.models import (
+    aggregate_entries,
+    compact_duration,
     format_snapshot_time,
     parse_entries,
     select_latest_four_periods,
@@ -70,7 +72,33 @@ class ModelTests(unittest.TestCase):
             "2026-07-23 13:00",
         )
 
+    def test_aggregates_consecutive_equal_durations(self):
+        values = [
+            {
+                "rank": rank,
+                "teamName": f"队伍{rank}",
+                "durationStr": duration,
+                "snapshotTime": "20260723130000",
+            }
+            for rank, duration in (
+                (28, "7分11秒"),
+                (29, "7分11秒"),
+                (30, "7分11秒"),
+                (31, "7分11秒"),
+                (32, "7分11秒"),
+                (33, "7分12秒"),
+            )
+        ]
+
+        aggregates = aggregate_entries(parse_entries(values))
+
+        self.assertEqual(aggregates[0].rank_label, "28-32")
+        self.assertEqual(aggregates[0].duration, "7分11秒")
+        self.assertEqual(aggregates[1].rank_label, "33")
+
+    def test_compacts_duration(self):
+        self.assertEqual(compact_duration("7分11秒"), "7:11")
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -4,14 +4,20 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .models import RankBoard, RankSnapshot
+from .models import (
+    RankAggregate,
+    RankBoard,
+    RankingEntry,
+    RankSnapshot,
+    compact_duration,
+)
 
 
 class RankRenderer:
-    WIDTH = 1440
-    HEIGHT = 1680
-    CARD_WIDTH = 660
-    CARD_HEIGHT = 640
+    TOP_LIMIT = 20
+    ROW_HEIGHT = 40
+    OVERVIEW_WIDTH = 2760
+    DETAIL_WIDTH = 1120
 
     BACKGROUND = "#101719"
     SURFACE = "#182225"
@@ -44,64 +50,149 @@ class RankRenderer:
         return ImageFont.truetype(self.font_bold if bold else self.font_regular, size)
 
     def render(self, snapshot: RankSnapshot, output_path: str) -> None:
+        self.render_overview(snapshot, output_path)
+
+    def render_overview(self, snapshot: RankSnapshot, output_path: str) -> None:
         if len(snapshot.boards) != 4:
-            raise ValueError("四榜图片必须包含 4 个榜单")
+            raise ValueError("四榜总图必须包含 4 个榜单")
 
-        image = Image.new("RGB", (self.WIDTH, self.HEIGHT), self.BACKGROUND)
+        row_counts = [self._row_count(board) for board in snapshot.boards]
+        board_top = 232
+        board_header_height = 156
+        board_height = board_header_height + max(row_counts) * self.ROW_HEIGHT + 24
+        footer_top = board_top + board_height + 34
+        height = footer_top + 86
+
+        image = Image.new("RGB", (self.OVERVIEW_WIDTH, height), self.BACKGROUND)
         draw = ImageDraw.Draw(image)
-        self._draw_background(draw)
-        self._draw_header(draw, snapshot)
+        self._draw_background(draw, self.OVERVIEW_WIDTH, height)
+        self._draw_page_header(
+            draw,
+            width=self.OVERVIEW_WIDTH,
+            title="燕云赛季总榜",
+            subtitle="当前活动周期 · 前 20 名队伍 + 尾部同用时聚合",
+            updated_at=snapshot.updated_at,
+        )
 
-        positions = ((48, 244), (732, 244), (48, 908), (732, 908))
-        for index, (board, position) in enumerate(zip(snapshot.boards, positions)):
-            self._draw_board(draw, board, position, self.ACCENTS[index])
+        margin = 48
+        gap = 20
+        board_width = (
+            self.OVERVIEW_WIDTH - margin * 2 - gap * 3
+        ) // 4
+        for index, board in enumerate(snapshot.boards):
+            x = margin + index * (board_width + gap)
+            self._draw_board(
+                draw,
+                board=board,
+                box=(x, board_top, board_width, board_height),
+                accent=self.ACCENTS[index],
+                compact=True,
+            )
 
-        self._draw_footer(draw)
+        self._draw_footer(draw, self.OVERVIEW_WIDTH, footer_top)
         image.save(output_path, format="PNG", optimize=True)
 
-    def _draw_background(self, draw: ImageDraw.ImageDraw) -> None:
-        draw.rectangle((0, 0, self.WIDTH, 10), fill=self.ACCENTS[0])
-        draw.rectangle((self.WIDTH // 2, 0, self.WIDTH, 10), fill=self.ACCENTS[1])
-        for y in range(96, self.HEIGHT, 160):
-            draw.line((0, y, self.WIDTH, y - 72), fill="#142023", width=1)
+    def render_detail(
+        self,
+        board: RankBoard,
+        updated_at: str,
+        output_path: str,
+    ) -> None:
+        board_top = 232
+        board_header_height = 156
+        board_height = (
+            board_header_height
+            + self._row_count(board) * self.ROW_HEIGHT
+            + 24
+        )
+        footer_top = board_top + board_height + 34
+        height = footer_top + 86
 
-    def _draw_header(
+        image = Image.new("RGB", (self.DETAIL_WIDTH, height), self.BACKGROUND)
+        draw = ImageDraw.Draw(image)
+        self._draw_background(draw, self.DETAIL_WIDTH, height)
+        title = (
+            f"燕云 · {board.period.team_size_name}"
+            f"{board.period.difficulty_name}榜"
+        )
+        self._draw_page_header(
+            draw,
+            width=self.DETAIL_WIDTH,
+            title=title,
+            subtitle=board.period.period_name,
+            updated_at=updated_at,
+        )
+        self._draw_board(
+            draw,
+            board=board,
+            box=(48, board_top, self.DETAIL_WIDTH - 96, board_height),
+            accent=self._accent_for(board),
+            compact=False,
+        )
+        self._draw_footer(draw, self.DETAIL_WIDTH, footer_top)
+        image.save(output_path, format="PNG", optimize=True)
+
+    def _row_count(self, board: RankBoard) -> int:
+        return (
+            len(board.top_entries(self.TOP_LIMIT))
+            + len(board.aggregate_tail(self.TOP_LIMIT))
+            + 1
+        )
+
+    def _draw_background(
         self,
         draw: ImageDraw.ImageDraw,
-        snapshot: RankSnapshot,
+        width: int,
+        height: int,
+    ) -> None:
+        half = width // 2
+        draw.rectangle((0, 0, half, 10), fill=self.ACCENTS[0])
+        draw.rectangle((half, 0, width, 10), fill=self.ACCENTS[1])
+        for y in range(96, height, 180):
+            draw.line((0, y, width, y - 72), fill="#142023", width=1)
+
+    def _draw_page_header(
+        self,
+        draw: ImageDraw.ImageDraw,
+        width: int,
+        title: str,
+        subtitle: str,
+        updated_at: str,
     ) -> None:
         draw.text(
-            (48, 48),
-            "燕云赛季四榜",
-            font=self.font(58, bold=True),
+            (48, 42),
+            title,
+            font=self.font(54, bold=True),
             fill=self.TEXT,
         )
         draw.text(
-            (50, 126),
-            "当前活动周期 · 实时团队排名 TOP 10",
-            font=self.font(26),
+            (50, 119),
+            subtitle,
+            font=self.font(25),
             fill=self.MUTED,
         )
-        updated_text = f"数据更新时间  {snapshot.updated_at}"
-        width = draw.textlength(updated_text, font=self.font(24))
+        updated_text = f"数据更新时间  {updated_at}"
+        updated_font = self.font(22)
+        updated_width = draw.textlength(updated_text, font=updated_font)
         draw.text(
-            (self.WIDTH - 48 - width, 130),
+            (width - 48 - updated_width, 126),
             updated_text,
-            font=self.font(24),
+            font=updated_font,
             fill=self.MUTED,
         )
-        draw.line((48, 205, self.WIDTH - 48, 205), fill=self.BORDER, width=2)
+        draw.line((48, 198, width - 48, 198), fill=self.BORDER, width=2)
 
     def _draw_board(
         self,
         draw: ImageDraw.ImageDraw,
         board: RankBoard,
-        position: tuple[int, int],
+        box: tuple[int, int, int, int],
         accent: str,
+        compact: bool,
     ) -> None:
-        x, y = position
-        right = x + self.CARD_WIDTH
-        bottom = y + self.CARD_HEIGHT
+        x, y, width, height = box
+        right = x + width
+        bottom = y + height
         draw.rounded_rectangle(
             (x, y, right, bottom),
             radius=8,
@@ -111,122 +202,246 @@ class RankRenderer:
         )
         draw.rectangle((x, y, x + 8, bottom), fill=accent)
 
+        title_font = self.font(27 if compact else 31, bold=True)
         title = self._ellipsize(
             draw,
             board.period.period_name,
-            self.font(30, bold=True),
-            self.CARD_WIDTH - 64,
+            title_font,
+            width - 58,
         )
-        draw.text(
-            (x + 30, y + 24),
-            title,
-            font=self.font(30, bold=True),
-            fill=self.TEXT,
-        )
+        draw.text((x + 28, y + 20), title, font=title_font, fill=self.TEXT)
+
         detail = (
-            f"{board.period.difficulty_name}榜  ·  "
-            f"{len(board.entries)} 条  ·  截止 {board.period.end_time[:16]}"
+            f"{board.period.team_size_name} · {board.period.difficulty_name}榜"
+            f" · 共 {len(board.entries)} 条"
         )
         draw.text(
-            (x + 31, y + 70),
+            (x + 29, y + 63),
             detail,
-            font=self.font(20),
+            font=self.font(19 if compact else 21),
             fill=accent,
         )
 
-        header_y = y + 112
+        table_top = y + 104
+        table_left = x + 16
+        table_right = right - 16
+        rank_width = 112 if compact else 145
+        duration_width = 118 if compact else 155
+        team_left = table_left + rank_width
+        duration_left = table_right - duration_width
+
         draw.rectangle(
-            (x + 16, header_y, right - 16, header_y + 42),
+            (table_left, table_top, table_right, table_top + 42),
             fill=self.SURFACE_ALT,
         )
+        header_font = self.font(18 if compact else 20, bold=True)
         draw.text(
-            (x + 34, header_y + 8),
+            (table_left + 18, table_top + 9),
             "名次",
-            font=self.font(19, bold=True),
+            font=header_font,
             fill=self.MUTED,
         )
         draw.text(
-            (x + 113, header_y + 8),
+            (team_left + 6, table_top + 9),
             "队伍",
-            font=self.font(19, bold=True),
+            font=header_font,
             fill=self.MUTED,
         )
         draw.text(
-            (right - 126, header_y + 8),
+            (duration_left + 12, table_top + 9),
             "用时",
-            font=self.font(19, bold=True),
+            font=header_font,
             fill=self.MUTED,
         )
 
-        row_top = header_y + 46
-        for row_index, entry in enumerate(board.entries):
-            top = row_top + row_index * 46
-            if row_index % 2:
-                draw.rectangle(
-                    (x + 16, top, right - 16, top + 44),
-                    fill="#1A2528",
-                )
-            if row_index:
-                draw.line(
-                    (x + 30, top, right - 30, top),
-                    fill="#273437",
-                    width=1,
-                )
-
-            rank_fill = accent if entry.rank <= 3 else self.MUTED
-            rank_text = str(entry.rank)
-            rank_font = self.font(21, bold=entry.rank <= 3)
-            rank_width = draw.textlength(rank_text, font=rank_font)
-            draw.text(
-                (x + 60 - rank_width / 2, top + 9),
-                rank_text,
-                font=rank_font,
-                fill=rank_fill,
-            )
-
-            team_font = self.font(22, bold=entry.rank <= 3)
-            team_name = self._ellipsize(
+        row_top = y + 150
+        row_index = 0
+        for entry in board.top_entries(self.TOP_LIMIT):
+            self._draw_entry_row(
                 draw,
-                entry.team_name,
-                team_font,
-                330,
+                entry=entry,
+                row_index=row_index,
+                top=row_top + row_index * self.ROW_HEIGHT,
+                table_left=table_left,
+                table_right=table_right,
+                team_left=team_left,
+                duration_left=duration_left,
+                accent=accent,
+                compact=compact,
             )
-            draw.text(
-                (x + 113, top + 7),
-                team_name,
-                font=team_font,
-                fill=self.TEXT,
-            )
+            row_index += 1
 
-            duration_font = self.font(21)
-            duration_width = draw.textlength(entry.duration, font=duration_font)
-            draw.text(
-                (right - 30 - duration_width, top + 8),
-                entry.duration,
-                font=duration_font,
-                fill=self.TEXT,
-            )
+        separator_top = row_top + row_index * self.ROW_HEIGHT
+        draw.rectangle(
+            (
+                table_left,
+                separator_top,
+                table_right,
+                separator_top + self.ROW_HEIGHT - 1,
+            ),
+            fill=self.SURFACE_ALT,
+        )
+        separator_text = "21名以后 · 连续相同用时聚合"
+        draw.text(
+            (table_left + 18, separator_top + 8),
+            separator_text,
+            font=self.font(18 if compact else 20, bold=True),
+            fill=accent,
+        )
+        row_index += 1
 
-    def _draw_footer(self, draw: ImageDraw.ImageDraw) -> None:
-        draw.line(
-            (48, 1588, self.WIDTH - 48, 1588),
-            fill=self.BORDER,
-            width=2,
+        for aggregate in board.aggregate_tail(self.TOP_LIMIT):
+            self._draw_aggregate_row(
+                draw,
+                aggregate=aggregate,
+                row_index=row_index,
+                top=row_top + row_index * self.ROW_HEIGHT,
+                table_left=table_left,
+                table_right=table_right,
+                duration_left=duration_left,
+                compact=compact,
+            )
+            row_index += 1
+
+    def _draw_entry_row(
+        self,
+        draw: ImageDraw.ImageDraw,
+        entry: RankingEntry,
+        row_index: int,
+        top: int,
+        table_left: int,
+        table_right: int,
+        team_left: int,
+        duration_left: int,
+        accent: str,
+        compact: bool,
+    ) -> None:
+        self._draw_row_base(
+            draw,
+            row_index,
+            top,
+            table_left,
+            table_right,
+        )
+        text_font = self.font(20 if compact else 22)
+        top_font = self.font(20 if compact else 22, bold=entry.rank <= 3)
+        draw.text(
+            (table_left + 20, top + 7),
+            str(entry.rank),
+            font=top_font,
+            fill=accent if entry.rank <= 3 else self.MUTED,
+        )
+
+        team_width = duration_left - team_left - 12
+        team_name = self._limit_team_name(
+            draw,
+            entry.team_name,
+            top_font,
+            team_width,
         )
         draw.text(
-            (48, 1615),
-            "数据来源：yysls.rubysiu.cn  ·  排名以数据源实时结果为准",
-            font=self.font(22),
+            (team_left + 6, top + 6),
+            team_name,
+            font=top_font,
+            fill=self.TEXT,
+        )
+        draw.text(
+            (duration_left + 12, top + 7),
+            compact_duration(entry.duration),
+            font=text_font,
+            fill=self.TEXT,
+        )
+
+    def _draw_aggregate_row(
+        self,
+        draw: ImageDraw.ImageDraw,
+        aggregate: RankAggregate,
+        row_index: int,
+        top: int,
+        table_left: int,
+        table_right: int,
+        duration_left: int,
+        compact: bool,
+    ) -> None:
+        self._draw_row_base(
+            draw,
+            row_index,
+            top,
+            table_left,
+            table_right,
+        )
+        aggregate_font = self.font(19 if compact else 21)
+        draw.text(
+            (table_left + 20, top + 7),
+            aggregate.rank_label,
+            font=aggregate_font,
+            fill=self.MUTED,
+        )
+        draw.text(
+            (duration_left + 12, top + 7),
+            compact_duration(aggregate.duration),
+            font=aggregate_font,
+            fill=self.MUTED,
+        )
+
+    def _draw_row_base(
+        self,
+        draw: ImageDraw.ImageDraw,
+        row_index: int,
+        top: int,
+        table_left: int,
+        table_right: int,
+    ) -> None:
+        if row_index % 2:
+            draw.rectangle(
+                (
+                    table_left,
+                    top,
+                    table_right,
+                    top + self.ROW_HEIGHT - 1,
+                ),
+                fill="#1A2528",
+            )
+        if row_index:
+            draw.line(
+                (table_left + 12, top, table_right - 12, top),
+                fill="#273437",
+                width=1,
+            )
+
+    def _draw_footer(
+        self,
+        draw: ImageDraw.ImageDraw,
+        width: int,
+        top: int,
+    ) -> None:
+        draw.line((48, top, width - 48, top), fill=self.BORDER, width=2)
+        draw.text(
+            (48, top + 27),
+            "数据来源：yysls.rubysiu.cn · 排名以数据源实时结果为准",
+            font=self.font(21),
             fill=self.MUTED,
         )
         marker = "ASTRBOT · YANYUN"
-        marker_width = draw.textlength(marker, font=self.font(18, bold=True))
+        marker_font = self.font(18, bold=True)
+        marker_width = draw.textlength(marker, font=marker_font)
         draw.text(
-            (self.WIDTH - 48 - marker_width, 1618),
+            (width - 48 - marker_width, top + 30),
             marker,
-            font=self.font(18, bold=True),
+            font=marker_font,
             fill=self.ACCENTS[0],
         )
+
+    def _limit_team_name(
+        self,
+        draw: ImageDraw.ImageDraw,
+        text: str,
+        font: ImageFont.FreeTypeFont,
+        max_width: float,
+    ) -> str:
+        if len(text) > 12:
+            text = text[:12] + "…"
+        return self._ellipsize(draw, text, font, max_width)
 
     @staticmethod
     def _ellipsize(
@@ -242,3 +457,16 @@ class RankRenderer:
             text = text[:-1]
         return text + suffix
 
+    def _accent_for(self, board: RankBoard) -> str:
+        index_by_type = {
+            (1, 1): 0,
+            (1, 2): 1,
+            (2, 1): 2,
+            (2, 2): 3,
+        }
+        return self.ACCENTS[
+            index_by_type.get(
+                (board.period.dungeon_type, board.period.period_type),
+                0,
+            )
+        ]
