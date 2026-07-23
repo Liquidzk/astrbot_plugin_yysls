@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $ToolRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Python = Join-Path $ToolRoot ".venv\Scripts\python.exe"
 $Updater = Join-Path $ToolRoot "update_current_snapshot.py"
+$Config = Join-Path $ToolRoot "ranks.json"
 $Output = Join-Path (Split-Path -Parent $ToolRoot) "data\current-ranks.json"
 $LogDir = Join-Path $ToolRoot "output\logs"
 $LogFile = Join-Path $LogDir "rank-updater.log"
@@ -20,6 +21,8 @@ $env:PYTHONUNBUFFERED = "1"
 $Process = Start-Process -FilePath $Python `
     -ArgumentList @(
         $Updater,
+        "--config",
+        $Config,
         "--output",
         $Output,
         "--interval",

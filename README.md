@@ -31,7 +31,8 @@ AstrBot 的燕云十六声排行榜插件。提供最新活动周期的总榜与
 [燕云十六声排行榜](https://yysls.rubysiu.cn/yysls/rank) 的网站接口。两个来源都暂时
 不可用时，插件会继续使用最后一份完整快照。
 
-当前映射为五挑 60、五普 63、十挑 59、十普 62，详见
+当前映射为五挑 60、五普 63、十挑 59、十普 62。换期时直接编辑
+[`rank-backend/ranks.json`](rank-backend/ranks.json)，详见
 [`rank-backend/README.md`](rank-backend/README.md)。
 
 ## 安装

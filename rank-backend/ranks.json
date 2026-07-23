@@ -1,0 +1,13 @@
+{
+  "periodOrder": 2,
+  "five": {
+    "dungeonName": "沧流走虺",
+    "normalRankId": 63,
+    "challengeRankId": 60
+  },
+  "ten": {
+    "dungeonName": "风翎掠寒江",
+    "normalRankId": 62,
+    "challengeRankId": 59
+  }
+}
