@@ -95,6 +95,24 @@ class RankAggregate:
 
 
 @dataclass(frozen=True)
+class RankPosition:
+    start_rank: int
+    end_rank: int
+    exact: bool
+    total_entries: int
+
+    @property
+    def rank_label(self) -> str:
+        if self.start_rank == self.end_rank:
+            return str(self.start_rank)
+        return f"{self.start_rank}-{self.end_rank}"
+
+    @property
+    def team_count(self) -> int:
+        return self.end_rank - self.start_rank + 1
+
+
+@dataclass(frozen=True)
 class RankBoard:
     period: Period
     entries: tuple[RankingEntry, ...]
@@ -246,6 +264,57 @@ def duration_to_seconds(value: str) -> int:
     if len(numbers) < 2:
         raise ValueError(f"无法解析用时：{value}")
     return int(numbers[0]) * 60 + int(numbers[1])
+
+
+def parse_query_duration(value: str) -> int:
+    match = re.fullmatch(r"\s*(\d{1,3})[:：]([0-5]\d)\s*", value)
+    if match is None:
+        raise ValueError("时间格式应为 分:秒，例如 7:11")
+    return int(match.group(1)) * 60 + int(match.group(2))
+
+
+def format_duration_seconds(total_seconds: int) -> str:
+    minutes, seconds = divmod(total_seconds, 60)
+    return f"{minutes}:{seconds:02d}"
+
+
+def lookup_duration_rank(
+    entries: tuple[RankingEntry, ...],
+    target_seconds: int,
+) -> RankPosition:
+    if not entries:
+        raise ValueError("榜单暂无排名数据")
+
+    ranked_durations = tuple(
+        (entry.rank, duration_to_seconds(entry.duration))
+        for entry in entries
+    )
+    matching_ranks = tuple(
+        rank
+        for rank, duration_seconds in ranked_durations
+        if duration_seconds == target_seconds
+    )
+    if matching_ranks:
+        return RankPosition(
+            start_rank=min(matching_ranks),
+            end_rank=max(matching_ranks),
+            exact=True,
+            total_entries=len(entries),
+        )
+
+    projected_rank = (
+        sum(
+            duration_seconds < target_seconds
+            for _, duration_seconds in ranked_durations
+        )
+        + 1
+    )
+    return RankPosition(
+        start_rank=projected_rank,
+        end_rank=projected_rank,
+        exact=False,
+        total_entries=len(entries),
+    )
 
 
 def compact_duration(value: str) -> str:

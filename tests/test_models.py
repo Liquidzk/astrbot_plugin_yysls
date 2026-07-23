@@ -3,8 +3,11 @@ import unittest
 from src.models import (
     aggregate_entries,
     compact_duration,
+    format_duration_seconds,
     format_snapshot_time,
+    lookup_duration_rank,
     parse_entries,
+    parse_query_duration,
     select_latest_four_periods,
 )
 
@@ -170,6 +173,55 @@ class ModelTests(unittest.TestCase):
 
     def test_compacts_duration(self):
         self.assertEqual(compact_duration("7分11秒"), "7:11")
+
+    def test_parses_query_duration(self):
+        self.assertEqual(parse_query_duration("7:11"), 431)
+        self.assertEqual(parse_query_duration("7：11"), 431)
+        self.assertEqual(format_duration_seconds(431), "7:11")
+        with self.assertRaisesRegex(ValueError, "分:秒"):
+            parse_query_duration("7:99")
+
+    def test_finds_exact_rank_range_for_same_second(self):
+        values = [
+            {
+                "rank": rank,
+                "teamName": f"队伍{rank}",
+                "durationStr": duration,
+                "snapshotTime": "20260723130000",
+            }
+            for rank, duration in (
+                (1, "7:10.900"),
+                (2, "7:11.001"),
+                (3, "7:11.800"),
+                (4, "7:12.100"),
+            )
+        ]
+
+        position = lookup_duration_rank(parse_entries(values), 431)
+
+        self.assertTrue(position.exact)
+        self.assertEqual(position.rank_label, "2-3")
+        self.assertEqual(position.team_count, 2)
+
+    def test_projects_rank_when_second_has_no_entry(self):
+        values = [
+            {
+                "rank": rank,
+                "teamName": f"队伍{rank}",
+                "durationStr": duration,
+                "snapshotTime": "20260723130000",
+            }
+            for rank, duration in (
+                (1, "7:10.900"),
+                (2, "7:12.100"),
+                (3, "7:13.100"),
+            )
+        ]
+
+        position = lookup_duration_rank(parse_entries(values), 431)
+
+        self.assertFalse(position.exact)
+        self.assertEqual(position.rank_label, "2")
 
 
 if __name__ == "__main__":
