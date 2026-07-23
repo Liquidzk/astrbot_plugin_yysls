@@ -12,8 +12,27 @@
 | 十人挑战 | `rank_team10_dungeon_59` |
 | 十人普通 | `rank_team10_dungeon_62` |
 
-第 1 期对应值为：五挑 59、五普 62、十挑 58、十普 61。切换期数时修改
-`yysls_rank_tool/snapshot.py` 中的 `CURRENT_PHASE_TWO_BOARDS`。
+编号、期数和副本名统一配置在 [`ranks.json`](ranks.json)：
+
+```json
+{
+  "periodOrder": 2,
+  "five": {
+    "dungeonName": "沧流走虺",
+    "normalRankId": 63,
+    "challengeRankId": 60
+  },
+  "ten": {
+    "dungeonName": "风翎掠寒江",
+    "normalRankId": 62,
+    "challengeRankId": 59
+  }
+}
+```
+
+第 1 期对应值为：五挑 59、五普 62、十挑 58、十普 61。切换期数时只需修改
+`ranks.json`；更新器每轮都会重新读取，无需重启 AstrBot。配置格式或编号无效时本轮
+更新失败，并保留上一份完整快照。
 
 ## 初始化
 
