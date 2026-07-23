@@ -24,7 +24,7 @@ class RankService:
     ACTIVE_PERIODS_PATH = "yysls/period/active/with-dungeon"
     RANK_PATH = "yysls/public/rank/realtime/{period_id}"
 
-    def __init__(self, cache_seconds: int = 60):
+    def __init__(self, cache_seconds: int = 0):
         self.cache_seconds = cache_seconds
         self._cached: RankSnapshot | None = None
         self._cached_at = 0.0
@@ -49,8 +49,10 @@ class RankService:
         timeout = aiohttp.ClientTimeout(total=15, connect=5)
         headers = {
             "Accept": "application/json",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
             "Referer": "https://yysls.rubysiu.cn/yysls/rank",
-            "User-Agent": "AstrBot-YanyunRank/0.1 (+https://github.com/Liquidzk/astrbot_plugin_yysls)",
+            "User-Agent": "AstrBot-YanyunRank/0.4 (+https://github.com/Liquidzk/astrbot_plugin_yysls)",
         }
         try:
             async with aiohttp.ClientSession(
@@ -104,7 +106,10 @@ class RankService:
         session: aiohttp.ClientSession,
         path: str,
     ) -> Any:
-        async with session.get(path) as response:
+        async with session.get(
+            path,
+            params={"_t": int(time.time() * 1000)},
+        ) as response:
             if response.status != 200:
                 raise RankApiError(f"数据源返回 HTTP {response.status}")
             try:

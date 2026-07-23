@@ -66,6 +66,19 @@ class RenderTests(unittest.TestCase):
                 self.assertGreater(image.height, 1000)
                 self.assertGreater(len(image.getcolors(maxcolors=1_000_000)), 10)
 
+    def test_renders_nonblank_team_size_pair(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "pair.png"
+            RankRenderer().render_pair(
+                self.snapshot.boards[:2],
+                self.snapshot.updated_at,
+                str(output),
+            )
+            with Image.open(output) as image:
+                self.assertEqual(image.width, 1180)
+                self.assertGreater(image.height, 1000)
+                self.assertGreater(len(image.getcolors(maxcolors=1_000_000)), 10)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,7 @@ class RankRenderer:
     TOP_LIMIT = 20
     ROW_HEIGHT = 40
     OVERVIEW_WIDTH = 2320
+    PAIR_WIDTH = 1180
     DETAIL_WIDTH = 820
 
     BACKGROUND = "#101719"
@@ -90,6 +91,55 @@ class RankRenderer:
             )
 
         self._draw_footer(draw, self.OVERVIEW_WIDTH, footer_top)
+        image.save(output_path, format="PNG", optimize=True)
+
+    def render_pair(
+        self,
+        boards: tuple[RankBoard, ...],
+        updated_at: str,
+        output_path: str,
+    ) -> None:
+        if len(boards) != 2:
+            raise ValueError("双榜图片必须包含普通、挑战两个榜单")
+        if len({board.period.dungeon_type for board in boards}) != 1:
+            raise ValueError("双榜图片中的队伍人数必须一致")
+
+        boards = tuple(
+            sorted(boards, key=lambda board: board.period.period_type)
+        )
+        row_counts = [self._row_count(board) for board in boards]
+        board_top = 232
+        board_header_height = 156
+        board_height = board_header_height + max(row_counts) * self.ROW_HEIGHT + 24
+        footer_top = board_top + board_height + 34
+        height = footer_top + 86
+
+        image = Image.new("RGB", (self.PAIR_WIDTH, height), self.BACKGROUND)
+        draw = ImageDraw.Draw(image)
+        self._draw_background(draw, self.PAIR_WIDTH, height)
+        team_size_name = boards[0].period.team_size_name
+        self._draw_page_header(
+            draw,
+            width=self.PAIR_WIDTH,
+            title=f"燕云 · {team_size_name}双榜",
+            subtitle="普通 + 挑战 · 前 20 名队伍 + 尾部分段聚合",
+            updated_at=updated_at,
+        )
+
+        margin = 48
+        gap = 20
+        board_width = (self.PAIR_WIDTH - margin * 2 - gap) // 2
+        for index, board in enumerate(boards):
+            x = margin + index * (board_width + gap)
+            self._draw_board(
+                draw,
+                board=board,
+                box=(x, board_top, board_width, board_height),
+                accent=self._accent_for(board),
+                compact=True,
+            )
+
+        self._draw_footer(draw, self.PAIR_WIDTH, footer_top)
         image.save(output_path, format="PNG", optimize=True)
 
     def render_detail(

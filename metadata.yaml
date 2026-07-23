@@ -1,7 +1,7 @@
 name: astrbot_plugin_yysls
 display_name: 燕云排行榜
 desc: 获取燕云十六声当前活动周期总榜与详细榜并生成分段聚合图片
-version: v0.3.1
+version: v0.4.0
 author: Liquidzk
 astrbot_version: ">=4.16.0"
 support_platforms:

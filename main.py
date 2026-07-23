@@ -31,7 +31,7 @@ DIFFICULTY_TYPES = {
     "astrbot_plugin_yysls",
     "Liquidzk",
     "燕云十六声当前活动周期四榜图片",
-    "0.3.1",
+    "0.4.0",
     "https://github.com/Liquidzk/astrbot_plugin_yysls",
 )
 class YanyunRankPlugin(Star):
@@ -46,9 +46,11 @@ class YanyunRankPlugin(Star):
         yield event.plain_result(
             "【燕云十六声】\n"
             "/排行榜 - 当前活动周期四榜总图\n"
-            "/排行榜 五人 [普通|挑战] - 五人详细榜\n"
-            "/排行榜 十人 [普通|挑战] - 十人详细榜\n\n"
-            "未写难度时默认为普通。前 20 名显示队伍，之后分段聚合。"
+            "/排行榜 五人 - 五人普通、挑战双榜\n"
+            "/排行榜 十人 - 十人普通、挑战双榜\n"
+            "/排行榜 五人 普通|挑战 - 五人单榜\n"
+            "/排行榜 十人 普通|挑战 - 十人单榜\n\n"
+            "前 20 名显示队伍，之后分段聚合。"
         )
 
     @filter.command("排行榜")
@@ -56,48 +58,84 @@ class YanyunRankPlugin(Star):
         self,
         event: AstrMessageEvent,
         team_size: str = "",
-        difficulty: str = "普通",
+        difficulty: str = "",
     ):
         """生成当前活动周期的四榜图片。"""
         image_path = ""
         try:
             snapshot = await self.rank_service.get_latest()
-            board = None
+            selected_board = None
+            selected_pair = None
             if team_size:
                 team_size_type = TEAM_SIZE_TYPES.get(team_size.strip())
-                difficulty_type = DIFFICULTY_TYPES.get(difficulty.strip())
-                if team_size_type is None or difficulty_type is None:
+                difficulty_text = difficulty.strip()
+                difficulty_type = (
+                    DIFFICULTY_TYPES.get(difficulty_text)
+                    if difficulty_text
+                    else None
+                )
+                if team_size_type is None or (
+                    difficulty_text and difficulty_type is None
+                ):
                     yield event.plain_result(
                         "参数格式：/排行榜 [五人|十人] [普通|挑战]\n"
                         "示例：/排行榜 五人 挑战"
                     )
                     return
-                board = next(
-                    (
-                        item
-                        for item in snapshot.boards
-                        if item.period.dungeon_type == team_size_type
-                        and item.period.period_type == difficulty_type
-                    ),
-                    None,
+                matching_boards = tuple(
+                    sorted(
+                        (
+                            item
+                            for item in snapshot.boards
+                            if item.period.dungeon_type == team_size_type
+                        ),
+                        key=lambda item: item.period.period_type,
+                    )
                 )
-                if board is None:
+                if difficulty_type is None:
+                    if len(matching_boards) != 2:
+                        yield event.plain_result("当前活动周期的双榜数据不完整。")
+                        return
+                    selected_pair = matching_boards
+                else:
+                    selected_board = next(
+                        (
+                            item
+                            for item in matching_boards
+                            if item.period.period_type == difficulty_type
+                        ),
+                        None,
+                    )
+                if difficulty_type is not None and selected_board is None:
                     yield event.plain_result("当前活动周期没有对应榜单。")
                     return
+            elif difficulty.strip():
+                yield event.plain_result(
+                    "请先指定五人或十人。\n"
+                    "示例：/排行榜 五人 挑战"
+                )
+                return
 
             handle, image_path = tempfile.mkstemp(
                 prefix="yysls_rank_",
                 suffix=".png",
             )
             os.close(handle)
-            if board:
+            if selected_board:
                 self.renderer.render_detail(
-                    board,
+                    selected_board,
+                    snapshot.updated_at,
+                    image_path,
+                )
+            elif selected_pair:
+                self.renderer.render_pair(
+                    selected_pair,
                     snapshot.updated_at,
                     image_path,
                 )
             else:
                 self.renderer.render_overview(snapshot, image_path)
+            logger.info("燕云排行榜使用数据快照: %s", snapshot.updated_at)
             event.track_temporary_local_file(image_path)
             yield event.image_result(image_path)
         except RankApiError as exc:
