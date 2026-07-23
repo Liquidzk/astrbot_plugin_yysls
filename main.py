@@ -3,9 +3,15 @@ import tempfile
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.message_components import At, Plain
 from astrbot.api.star import Context, Star, register
 
 from .src.api import RankApiError, RankService
+from .src.models import (
+    format_duration_seconds,
+    lookup_duration_rank,
+    parse_query_duration,
+)
 from .src.render import RankRenderer
 
 
@@ -31,7 +37,7 @@ DIFFICULTY_TYPES = {
     "astrbot_plugin_yysls",
     "Liquidzk",
     "燕云十六声当前活动周期四榜图片",
-    "0.5.0",
+    "0.6.0",
     "https://github.com/Liquidzk/astrbot_plugin_yysls",
 )
 class YanyunRankPlugin(Star):
@@ -50,6 +56,8 @@ class YanyunRankPlugin(Star):
             "/排行榜 十人 - 十人普通、挑战双榜\n"
             "/排行榜 五人 普通|挑战 - 五人单榜\n"
             "/排行榜 十人 普通|挑战 - 十人单榜\n\n"
+            "/排行榜 五人 普通 7:11 - 查询该用时名次\n"
+            "十人榜和挑战榜同样支持时间查询。\n\n"
             "前 20 名显示队伍，之后分段聚合。"
         )
 
@@ -59,6 +67,7 @@ class YanyunRankPlugin(Star):
         event: AstrMessageEvent,
         team_size: str = "",
         difficulty: str = "",
+        duration: str = "",
     ):
         """生成当前活动周期的四榜图片。"""
         image_path = ""
@@ -78,8 +87,15 @@ class YanyunRankPlugin(Star):
                     difficulty_text and difficulty_type is None
                 ):
                     yield event.plain_result(
-                        "参数格式：/排行榜 [五人|十人] [普通|挑战]\n"
-                        "示例：/排行榜 五人 挑战"
+                        "参数格式：/排行榜 [五人|十人] "
+                        "[普通|挑战] [分:秒]\n"
+                        "示例：/排行榜 五人 普通 7:11"
+                    )
+                    return
+                if duration.strip() and difficulty_type is None:
+                    yield event.plain_result(
+                        "查询名次时请指定普通或挑战榜。\n"
+                        "示例：/排行榜 五人 普通 7:11"
                     )
                     return
                 matching_boards = tuple(
@@ -108,6 +124,56 @@ class YanyunRankPlugin(Star):
                     )
                 if difficulty_type is not None and selected_board is None:
                     yield event.plain_result("当前活动周期没有对应榜单。")
+                    return
+                if duration.strip():
+                    try:
+                        target_seconds = parse_query_duration(duration)
+                        position = lookup_duration_rank(
+                            selected_board.entries,
+                            target_seconds,
+                        )
+                    except ValueError as exc:
+                        yield event.plain_result(str(exc))
+                        return
+
+                    duration_label = format_duration_seconds(target_seconds)
+                    board_label = (
+                        f"{selected_board.period.team_size_name}"
+                        f"{selected_board.period.difficulty_name}榜"
+                    )
+                    if position.exact:
+                        detail = (
+                            f"对应第 {position.rank_label} 名"
+                            if position.team_count == 1
+                            else (
+                                f"对应第 {position.rank_label} 名"
+                                f"（同秒 {position.team_count} 队）"
+                            )
+                        )
+                    elif position.start_rank > position.total_entries:
+                        detail = (
+                            f"预计第 {position.start_rank} 名以后"
+                            f"（当前共 {position.total_entries} 队）"
+                        )
+                    else:
+                        detail = f"暂无同秒记录，预计约第 {position.start_rank} 名"
+
+                    logger.info(
+                        "燕云排行榜用时查询: %s %s -> %s (%s)",
+                        board_label,
+                        duration_label,
+                        position.rank_label,
+                        snapshot.updated_at,
+                    )
+                    yield event.chain_result(
+                        [
+                            At(qq=event.get_sender_id()),
+                            Plain(
+                                f"\n{board_label}：{duration_label} {detail}。\n"
+                                f"数据时间：{snapshot.updated_at}"
+                            ),
+                        ]
+                    )
                     return
             elif difficulty.strip():
                 yield event.plain_result(
