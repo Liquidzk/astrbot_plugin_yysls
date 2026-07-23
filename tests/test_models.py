@@ -72,7 +72,7 @@ class ModelTests(unittest.TestCase):
             "2026-07-23 13:00",
         )
 
-    def test_aggregates_consecutive_equal_durations(self):
+    def test_normal_aggregation_waits_for_minimum_and_span(self):
         values = [
             {
                 "rank": rank,
@@ -81,20 +81,92 @@ class ModelTests(unittest.TestCase):
                 "snapshotTime": "20260723130000",
             }
             for rank, duration in (
-                (28, "7分11秒"),
-                (29, "7分11秒"),
-                (30, "7分11秒"),
-                (31, "7分11秒"),
-                (32, "7分11秒"),
-                (33, "7分12秒"),
+                (21, "7分11秒"),
+                (22, "7分12秒"),
+                (23, "7分13秒"),
+                (24, "7分14秒"),
+                (25, "7分15秒"),
             )
         ]
 
         aggregates = aggregate_entries(parse_entries(values))
 
-        self.assertEqual(aggregates[0].rank_label, "28-32")
-        self.assertEqual(aggregates[0].duration, "7分11秒")
-        self.assertEqual(aggregates[1].rank_label, "33")
+        self.assertEqual(len(aggregates), 1)
+        self.assertEqual(aggregates[0].rank_label, "21-25")
+        self.assertEqual(aggregates[0].duration_label, "7:11-7:15")
+        self.assertEqual(aggregates[0].team_count, 5)
+
+    def test_aggregation_closes_after_current_second_reaches_twenty(self):
+        values = [
+            {
+                "rank": rank,
+                "teamName": f"队伍{rank}",
+                "durationStr": "7分11秒" if rank <= 30 else "7分12秒",
+                "snapshotTime": "20260723130000",
+            }
+            for rank in range(21, 41)
+        ]
+
+        aggregates = aggregate_entries(parse_entries(values))
+
+        self.assertEqual(len(aggregates), 1)
+        self.assertEqual(aggregates[0].rank_label, "21-40")
+        self.assertEqual(aggregates[0].team_count, 20)
+
+    def test_challenge_uses_six_second_span(self):
+        values = [
+            {
+                "rank": rank,
+                "teamName": f"队伍{rank}",
+                "durationStr": duration,
+                "snapshotTime": "20260723130000",
+            }
+            for rank, duration in (
+                (21, "7分11秒"),
+                (22, "7分12秒"),
+                (23, "7分13秒"),
+                (24, "7分14秒"),
+                (25, "7分15秒"),
+                (26, "7分17秒"),
+            )
+        ]
+
+        aggregates = aggregate_entries(
+            parse_entries(values),
+            max_span_seconds=6,
+        )
+
+        self.assertEqual(len(aggregates), 1)
+        self.assertEqual(aggregates[0].rank_label, "21-26")
+        self.assertEqual(aggregates[0].duration_label, "7:11-7:17")
+
+    def test_unclosed_tail_merges_into_previous_segment(self):
+        values = [
+            {
+                "rank": rank,
+                "teamName": f"队伍{rank}",
+                "durationStr": duration,
+                "snapshotTime": "20260723130000",
+            }
+            for rank, duration in (
+                (21, "7分11秒"),
+                (22, "7分12秒"),
+                (23, "7分13秒"),
+                (24, "7分14秒"),
+                (25, "7分15秒"),
+                (26, "7分16秒"),
+                (27, "7分16秒"),
+                (28, "7分16秒"),
+                (29, "7分16秒"),
+                (30, "7分16秒"),
+            )
+        ]
+
+        aggregates = aggregate_entries(parse_entries(values))
+
+        self.assertEqual(len(aggregates), 1)
+        self.assertEqual(aggregates[0].rank_label, "21-30")
+        self.assertEqual(aggregates[0].team_count, 10)
 
     def test_compacts_duration(self):
         self.assertEqual(compact_duration("7分11秒"), "7:11")

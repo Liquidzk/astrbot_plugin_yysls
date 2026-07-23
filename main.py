@@ -31,7 +31,7 @@ DIFFICULTY_TYPES = {
     "astrbot_plugin_yysls",
     "Liquidzk",
     "燕云十六声当前活动周期四榜图片",
-    "0.2.0",
+    "0.3.0",
     "https://github.com/Liquidzk/astrbot_plugin_yysls",
 )
 class YanyunRankPlugin(Star):
@@ -48,7 +48,7 @@ class YanyunRankPlugin(Star):
             "/排行榜 - 当前活动周期四榜总图\n"
             "/排行榜 五人 [普通|挑战] - 五人详细榜\n"
             "/排行榜 十人 [普通|挑战] - 十人详细榜\n\n"
-            "未写难度时默认为普通。前 20 名显示队伍，之后按相同用时聚合。"
+            "未写难度时默认为普通。前 20 名显示队伍，之后分段聚合。"
         )
 
     @filter.command("排行榜")

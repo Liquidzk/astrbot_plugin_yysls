@@ -70,7 +70,7 @@ class RankRenderer:
             draw,
             width=self.OVERVIEW_WIDTH,
             title="燕云赛季总榜",
-            subtitle="当前活动周期 · 前 20 名队伍 + 尾部同用时聚合",
+            subtitle="当前活动周期 · 前 20 名队伍 + 尾部分段聚合",
             updated_at=snapshot.updated_at,
         )
 
@@ -281,7 +281,10 @@ class RankRenderer:
             ),
             fill=self.SURFACE_ALT,
         )
-        separator_text = "21名以后 · 连续相同用时聚合"
+        seconds = 3 if board.period.period_type == 1 else 6
+        separator_text = (
+            f"21名以后 · ≥5队 · {seconds}秒跨度或20队封段"
+        )
         draw.text(
             (table_left + 18, separator_top + 8),
             separator_text,
@@ -379,7 +382,7 @@ class RankRenderer:
         )
         draw.text(
             (duration_left + 12, top + 7),
-            compact_duration(aggregate.duration),
+            aggregate.duration_label,
             font=aggregate_font,
             fill=self.MUTED,
         )

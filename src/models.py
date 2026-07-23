@@ -75,13 +75,23 @@ class RankingEntry:
 class RankAggregate:
     start_rank: int
     end_rank: int
-    duration: str
+    start_duration: str
+    end_duration: str
+    team_count: int
 
     @property
     def rank_label(self) -> str:
         if self.start_rank == self.end_rank:
             return str(self.start_rank)
         return f"{self.start_rank}-{self.end_rank}"
+
+    @property
+    def duration_label(self) -> str:
+        start = compact_duration(self.start_duration)
+        end = compact_duration(self.end_duration)
+        if start == end:
+            return start
+        return f"{start}-{end}"
 
 
 @dataclass(frozen=True)
@@ -93,7 +103,11 @@ class RankBoard:
         return self.entries[:limit]
 
     def aggregate_tail(self, top_limit: int = 20) -> tuple[RankAggregate, ...]:
-        return aggregate_entries(self.entries[top_limit:])
+        max_span_seconds = 3 if self.period.period_type == 1 else 6
+        return aggregate_entries(
+            self.entries[top_limit:],
+            max_span_seconds=max_span_seconds,
+        )
 
 
 @dataclass(frozen=True)
@@ -151,37 +165,95 @@ def parse_entries(
 
 def aggregate_entries(
     entries: tuple[RankingEntry, ...],
+    max_span_seconds: int = 3,
+    minimum_teams: int = 5,
+    target_teams: int = 20,
 ) -> tuple[RankAggregate, ...]:
-    aggregates: list[RankAggregate] = []
+    if not entries:
+        return ()
+
+    second_groups: list[RankAggregate] = []
     for entry in entries:
-        previous = aggregates[-1] if aggregates else None
+        previous = second_groups[-1] if second_groups else None
         if (
             previous
-            and previous.duration == entry.duration
+            and previous.end_duration == entry.duration
             and previous.end_rank + 1 == entry.rank
         ):
-            aggregates[-1] = RankAggregate(
+            second_groups[-1] = RankAggregate(
                 start_rank=previous.start_rank,
                 end_rank=entry.rank,
-                duration=previous.duration,
+                start_duration=previous.start_duration,
+                end_duration=entry.duration,
+                team_count=previous.team_count + 1,
             )
         else:
-            aggregates.append(
+            second_groups.append(
                 RankAggregate(
                     start_rank=entry.rank,
                     end_rank=entry.rank,
-                    duration=entry.duration,
+                    start_duration=entry.duration,
+                    end_duration=entry.duration,
+                    team_count=1,
                 )
             )
+
+    aggregates: list[RankAggregate] = []
+    pending: RankAggregate | None = None
+    for group in second_groups:
+        pending = _merge_aggregates(pending, group)
+        span_seconds = (
+            duration_to_seconds(pending.end_duration)
+            - duration_to_seconds(pending.start_duration)
+        )
+        should_close = (
+            pending.team_count >= minimum_teams
+            and (
+                span_seconds >= max_span_seconds
+                or pending.team_count >= target_teams
+            )
+        )
+        if should_close:
+            aggregates.append(pending)
+            pending = None
+
+    if pending:
+        if aggregates:
+            aggregates[-1] = _merge_aggregates(aggregates[-1], pending)
+        else:
+            aggregates.append(pending)
     return tuple(aggregates)
 
 
+def _merge_aggregates(
+    left: RankAggregate | None,
+    right: RankAggregate,
+) -> RankAggregate:
+    if left is None:
+        return right
+    return RankAggregate(
+        start_rank=left.start_rank,
+        end_rank=right.end_rank,
+        start_duration=left.start_duration,
+        end_duration=right.end_duration,
+        team_count=left.team_count + right.team_count,
+    )
+
+
+def duration_to_seconds(value: str) -> int:
+    numbers = re.findall(r"\d+", value)
+    if len(numbers) < 2:
+        raise ValueError(f"无法解析用时：{value}")
+    return int(numbers[0]) * 60 + int(numbers[1])
+
+
 def compact_duration(value: str) -> str:
-    match = re.fullmatch(r"(\d+)分(\d+)秒", value)
-    if not match:
+    try:
+        total_seconds = duration_to_seconds(value)
+    except ValueError:
         return value
-    minutes, seconds = match.groups()
-    return f"{int(minutes)}:{int(seconds):02d}"
+    minutes, seconds = divmod(total_seconds, 60)
+    return f"{minutes}:{seconds:02d}"
 
 
 def format_snapshot_time(value: str) -> str:
