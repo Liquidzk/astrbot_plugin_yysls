@@ -114,6 +114,7 @@ class RankBoard:
 class RankSnapshot:
     boards: tuple[RankBoard, ...]
     updated_at: str
+    source: str = "网站排行榜"
 
 
 def select_latest_four_periods(values: list[dict[str, Any]]) -> tuple[Period, ...]:

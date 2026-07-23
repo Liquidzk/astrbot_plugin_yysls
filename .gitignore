@@ -4,3 +4,5 @@ __pycache__/
 .ruff_cache/
 preview*.png
 /data/
+/rank-backend/.venv/
+/rank-backend/output/

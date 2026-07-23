@@ -471,7 +471,7 @@ class RankRenderer:
         draw.line((48, top, width - 48, top), fill=self.BORDER, width=2)
         draw.text(
             (48, top + 27),
-            "数据来源：yysls.rubysiu.cn · 排名以数据源实时结果为准",
+            "数据来源：燕云公开排行榜 · 排名以实时结果为准",
             font=self.font(21),
             fill=self.MUTED,
         )

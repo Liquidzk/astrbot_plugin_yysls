@@ -31,7 +31,7 @@ DIFFICULTY_TYPES = {
     "astrbot_plugin_yysls",
     "Liquidzk",
     "燕云十六声当前活动周期四榜图片",
-    "0.4.0",
+    "0.5.0",
     "https://github.com/Liquidzk/astrbot_plugin_yysls",
 )
 class YanyunRankPlugin(Star):
@@ -135,7 +135,11 @@ class YanyunRankPlugin(Star):
                 )
             else:
                 self.renderer.render_overview(snapshot, image_path)
-            logger.info("燕云排行榜使用数据快照: %s", snapshot.updated_at)
+            logger.info(
+                "燕云排行榜使用数据快照: %s (%s)",
+                snapshot.updated_at,
+                snapshot.source,
+            )
             event.track_temporary_local_file(image_path)
             yield event.image_result(image_path)
         except RankApiError as exc:
