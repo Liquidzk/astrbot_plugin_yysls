@@ -16,8 +16,8 @@ from .models import (
 class RankRenderer:
     TOP_LIMIT = 20
     ROW_HEIGHT = 40
-    OVERVIEW_WIDTH = 2760
-    DETAIL_WIDTH = 1120
+    OVERVIEW_WIDTH = 2320
+    DETAIL_WIDTH = 820
 
     BACKGROUND = "#101719"
     SURFACE = "#182225"
@@ -225,8 +225,8 @@ class RankRenderer:
         table_top = y + 104
         table_left = x + 16
         table_right = right - 16
-        rank_width = 112 if compact else 145
-        duration_width = 118 if compact else 155
+        rank_width = 100 if compact else 120
+        duration_width = 128 if compact else 170
         team_left = table_left + rank_width
         duration_left = table_right - duration_width
 
@@ -425,6 +425,8 @@ class RankRenderer:
             font=self.font(21),
             fill=self.MUTED,
         )
+        if width < 1000:
+            return
         marker = "ASTRBOT · YANYUN"
         marker_font = self.font(18, bold=True)
         marker_width = draw.textlength(marker, font=marker_font)

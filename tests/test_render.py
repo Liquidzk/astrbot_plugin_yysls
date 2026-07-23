@@ -49,7 +49,7 @@ class RenderTests(unittest.TestCase):
             output = Path(temp_dir) / "rank.png"
             RankRenderer().render_overview(self.snapshot, str(output))
             with Image.open(output) as image:
-                self.assertEqual(image.width, 2760)
+                self.assertEqual(image.width, 2320)
                 self.assertGreater(image.height, 1000)
                 self.assertGreater(len(image.getcolors(maxcolors=1_000_000)), 10)
 
@@ -62,7 +62,7 @@ class RenderTests(unittest.TestCase):
                 str(output),
             )
             with Image.open(output) as image:
-                self.assertEqual(image.width, 1120)
+                self.assertEqual(image.width, 820)
                 self.assertGreater(image.height, 1000)
                 self.assertGreater(len(image.getcolors(maxcolors=1_000_000)), 10)
 

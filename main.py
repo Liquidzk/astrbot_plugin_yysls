@@ -31,7 +31,7 @@ DIFFICULTY_TYPES = {
     "astrbot_plugin_yysls",
     "Liquidzk",
     "燕云十六声当前活动周期四榜图片",
-    "0.3.0",
+    "0.3.1",
     "https://github.com/Liquidzk/astrbot_plugin_yysls",
 )
 class YanyunRankPlugin(Star):
