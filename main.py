@@ -49,6 +49,7 @@ class YanyunRankPlugin(Star):
     @filter.command("燕云")
     async def yanyun_help(self, event: AstrMessageEvent):
         """查看燕云插件帮助。"""
+        event.stop_event()
         yield event.plain_result(
             "【燕云十六声】\n"
             "/排行榜 - 当前活动周期四榜总图\n"
@@ -70,6 +71,7 @@ class YanyunRankPlugin(Star):
         duration: str = "",
     ):
         """生成当前活动周期的四榜图片。"""
+        event.stop_event()
         image_path = ""
         try:
             snapshot = await self.rank_service.get_latest()
