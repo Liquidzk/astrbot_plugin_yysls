@@ -30,7 +30,7 @@ AstrBot 的燕云十六声排行榜插件。提供最新活动周期的总榜与
 
 ## 数据更新
 
-> 注意：使用前第一步请先在 `rank-backend/yysls_rank_tool/collector.py` 中填入 `DEFAULT_PID`。
+> 注意：使用前第一步请确认 `rank-backend/yysls_rank_tool/collector.py` 中的 `DEFAULT_PID`；当前可用 PID 为 `Z39buT+sBOJOZ3eQ`。
 
 `rank-backend` 中的更新工具每 5 分钟从燕云公开排行榜接口完整抓取配置中的四榜，
 并原子更新 `data/current-ranks.json`。插件优先读取 15 分钟内的本地快照，因此群命令

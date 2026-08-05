@@ -21,8 +21,8 @@ PLAYERS_ENDPOINT = "/flk/redis_player/get_players_info"
 
 DEFAULT_FIELDS = ["base", "head", "identity", "name_card"]
 
-# 使用前请填入用于请求燕云排行榜的 PID。
-DEFAULT_PID = ""
+# 用于请求燕云排行榜；失效时请替换为新的可用 PID。
+DEFAULT_PID = "Z39buT+sBOJOZ3eQ"
 DEFAULT_HOSTNUM = 10001
 
 # 当前第 2 期的四个榜单。

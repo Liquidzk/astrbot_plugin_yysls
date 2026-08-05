@@ -3,7 +3,7 @@
 从燕云公开排行榜接口抓取完整榜单，生成 AstrBot 插件使用的稳定 JSON 快照。
 快照写入采用临时文件替换，不会让 Bot 读到半份数据。
 
-> 注意：使用前第一步请先在 `rank-backend/yysls_rank_tool/collector.py` 中填入 `DEFAULT_PID`。
+> 注意：使用前第一步请确认 `rank-backend/yysls_rank_tool/collector.py` 中的 `DEFAULT_PID`；当前可用 PID 为 `Z39buT+sBOJOZ3eQ`。
 
 ## 榜单配置
 
