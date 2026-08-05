@@ -1,13 +1,22 @@
 {
-  "periodOrder": 2,
+  "periodOrder": 3,
   "five": {
     "dungeonName": "沧流走虺",
-    "normalRankId": 63,
-    "challengeRankId": 60
+    "normalRankId": 64,
+    "challengeRankId": 61
   },
   "ten": {
     "dungeonName": "风翎掠寒江",
-    "normalRankId": 62,
-    "challengeRankId": 59
-  }
+    "normalRankId": 63,
+    "challengeRankId": 60
+  },
+  "scheduledEvents": [
+    {
+      "id": "small-rollover-20260724-0600",
+      "at": "2026-07-24T06:00:00+08:00",
+      "action": "incrementPeriodAndRankIds",
+      "delta": 1,
+      "appliedAt": "2026-07-24T06:00:04+08:00"
+    }
+  ]
 }

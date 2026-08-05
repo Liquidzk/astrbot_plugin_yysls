@@ -122,10 +122,38 @@ class RankBoard:
 
     def aggregate_tail(self, top_limit: int = 20) -> tuple[RankAggregate, ...]:
         max_span_seconds = 3 if self.period.period_type == 1 else 6
-        return aggregate_entries(
-            self.entries[top_limit:],
+        tail_entries = self.entries[top_limit:]
+        if not tail_entries or not self.entries:
+            return ()
+
+        first_duration_milliseconds = duration_to_milliseconds(
+            self.entries[0].duration
+        )
+        collapse_index = next(
+            (
+                index
+                for index, entry in enumerate(tail_entries)
+                if duration_to_seconds(entry.duration) * 2_000
+                > first_duration_milliseconds * 3
+            ),
+            len(tail_entries),
+        )
+        aggregates = aggregate_entries(
+            tail_entries[:collapse_index],
             max_span_seconds=max_span_seconds,
         )
+        collapsed_entries = tail_entries[collapse_index:]
+        if not collapsed_entries:
+            return aggregates
+
+        collapsed = RankAggregate(
+            start_rank=collapsed_entries[0].rank,
+            end_rank=collapsed_entries[-1].rank,
+            start_duration=collapsed_entries[0].duration,
+            end_duration=collapsed_entries[-1].duration,
+            team_count=len(collapsed_entries),
+        )
+        return (*aggregates, collapsed)
 
 
 @dataclass(frozen=True)
@@ -196,7 +224,8 @@ def aggregate_entries(
         previous = second_groups[-1] if second_groups else None
         if (
             previous
-            and previous.end_duration == entry.duration
+            and duration_to_seconds(previous.end_duration)
+            == duration_to_seconds(entry.duration)
             and previous.end_rank + 1 == entry.rank
         ):
             second_groups[-1] = RankAggregate(
@@ -229,7 +258,7 @@ def aggregate_entries(
             pending.team_count >= minimum_teams
             and (
                 span_seconds >= max_span_seconds
-                or pending.team_count >= target_teams
+                or pending.team_count > target_teams
             )
         )
         if should_close:
@@ -259,11 +288,34 @@ def _merge_aggregates(
     )
 
 
-def duration_to_seconds(value: str) -> int:
-    numbers = re.findall(r"\d+", value)
+def duration_to_milliseconds(value: str) -> int:
+    text = str(value or "").strip().replace("：", ":")
+    match = re.fullmatch(
+        r"(\d+):([0-5]\d):([0-5]\d)(?:\.(\d{1,3}))?",
+        text,
+    )
+    if match:
+        hours, minutes, seconds, fraction = match.groups()
+        milliseconds = int((fraction or "0").ljust(3, "0"))
+        return (
+            (int(hours) * 3600 + int(minutes) * 60 + int(seconds)) * 1000
+            + milliseconds
+        )
+
+    match = re.fullmatch(r"(\d+):([0-5]\d)(?:\.(\d{1,3}))?", text)
+    if match:
+        minutes, seconds, fraction = match.groups()
+        milliseconds = int((fraction or "0").ljust(3, "0"))
+        return (int(minutes) * 60 + int(seconds)) * 1000 + milliseconds
+
+    numbers = re.findall(r"\d+", text)
     if len(numbers) < 2:
         raise ValueError(f"无法解析用时：{value}")
-    return int(numbers[0]) * 60 + int(numbers[1])
+    return (int(numbers[0]) * 60 + int(numbers[1])) * 1000
+
+
+def duration_to_seconds(value: str) -> int:
+    return duration_to_milliseconds(value) // 1000
 
 
 def parse_query_duration(value: str) -> int:
@@ -324,6 +376,13 @@ def compact_duration(value: str) -> str:
         return value
     minutes, seconds = divmod(total_seconds, 60)
     return f"{minutes}:{seconds:02d}"
+
+
+def precise_duration(value: str) -> str:
+    text = str(value or "").strip().replace("：", ":")
+    if re.fullmatch(r"\d+:\d{2}(?::\d{2})?(?:\.\d+)?", text):
+        return text
+    return compact_duration(text)
 
 
 def format_snapshot_time(value: str) -> str:

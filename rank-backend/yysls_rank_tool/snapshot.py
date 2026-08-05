@@ -21,6 +21,14 @@ from .collector import (
     write_json,
 )
 
+SMALL_ROLLOVER_ACTION = "incrementPeriodAndRankIds"
+RANK_ID_FIELDS = (
+    ("five", "normalRankId"),
+    ("five", "challengeRankId"),
+    ("ten", "normalRankId"),
+    ("ten", "challengeRankId"),
+)
+
 
 @dataclass(frozen=True)
 class BoardSpec:
@@ -69,7 +77,7 @@ def _positive_int(value: Any, field_name: str) -> int:
     return value
 
 
-def load_board_specs(path: Path) -> tuple[BoardSpec, ...]:
+def _load_config(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
@@ -79,6 +87,109 @@ def load_board_specs(path: Path) -> tuple[BoardSpec, ...]:
 
     if not isinstance(payload, dict):
         raise ValueError("榜单配置根节点必须是对象")
+    return payload
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    write_json(temporary_path, payload)
+    os.replace(temporary_path, path)
+
+
+def _event_time(value: Any, field_name: str) -> datetime:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} 必须是带时区的 ISO 时间")
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"{field_name} 不是有效的 ISO 时间") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"{field_name} 必须包含时区偏移")
+    return parsed
+
+
+def _increment_small_rollover(
+    payload: dict[str, Any],
+    delta: int,
+) -> None:
+    payload["periodOrder"] = (
+        _positive_int(payload.get("periodOrder"), "periodOrder") + delta
+    )
+    for team_key, rank_id_key in RANK_ID_FIELDS:
+        team_value = payload.get(team_key)
+        if not isinstance(team_value, dict):
+            raise ValueError(f"{team_key} 必须是对象")
+        team_value[rank_id_key] = (
+            _positive_int(
+                team_value.get(rank_id_key),
+                f"{team_key}.{rank_id_key}",
+            )
+            + delta
+        )
+
+
+def apply_due_scheduled_events(
+    path: Path,
+    *,
+    now: datetime | None = None,
+) -> tuple[str, ...]:
+    payload = _load_config(path)
+    events = payload.get("scheduledEvents", [])
+    if not isinstance(events, list):
+        raise ValueError("scheduledEvents 必须是数组")
+
+    current_time = now or datetime.now().astimezone()
+    if current_time.tzinfo is None or current_time.utcoffset() is None:
+        raise ValueError("当前时间必须包含时区")
+
+    seen_ids: set[str] = set()
+    pending: list[tuple[datetime, dict[str, Any], int]] = []
+    for index, event in enumerate(events):
+        field_prefix = f"scheduledEvents[{index}]"
+        if not isinstance(event, dict):
+            raise ValueError(f"{field_prefix} 必须是对象")
+
+        event_id = event.get("id")
+        if not isinstance(event_id, str) or not event_id.strip():
+            raise ValueError(f"{field_prefix}.id 不能为空")
+        event_id = event_id.strip()
+        if event_id in seen_ids:
+            raise ValueError(f"scheduledEvents.id 重复：{event_id}")
+        seen_ids.add(event_id)
+
+        action = event.get("action")
+        if action != SMALL_ROLLOVER_ACTION:
+            raise ValueError(
+                f"{field_prefix}.action 不支持：{action}"
+            )
+        scheduled_at = _event_time(event.get("at"), f"{field_prefix}.at")
+        delta = _positive_int(event.get("delta", 1), f"{field_prefix}.delta")
+
+        if event.get("appliedAt"):
+            continue
+        if scheduled_at <= current_time:
+            pending.append((scheduled_at, event, delta))
+
+    if not pending:
+        return ()
+
+    applied_ids = []
+    for scheduled_at, event, delta in sorted(
+        pending,
+        key=lambda item: item[0],
+    ):
+        _increment_small_rollover(payload, delta)
+        event["appliedAt"] = current_time.astimezone(
+            scheduled_at.tzinfo,
+        ).isoformat(timespec="seconds")
+        applied_ids.append(event["id"])
+
+    _write_json_atomic(path, payload)
+    return tuple(applied_ids)
+
+
+def load_board_specs(path: Path) -> tuple[BoardSpec, ...]:
+    payload = _load_config(path)
     period_order = _positive_int(
         payload.get("periodOrder"),
         "periodOrder",
@@ -230,6 +341,11 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Refresh interval in seconds; 0 runs once.",
     )
+    parser.add_argument(
+        "--apply-events-only",
+        action="store_true",
+        help="Apply due scheduled config events without fetching ranks.",
+    )
     parser.add_argument("--pid", default=DEFAULT_PID)
     parser.add_argument("--hostnum", type=int, default=DEFAULT_HOSTNUM)
     parser.add_argument("--delay", type=float, default=0.2)
@@ -266,6 +382,14 @@ def main() -> None:
     while True:
         started_at = time.monotonic()
         try:
+            applied_events = apply_due_scheduled_events(args.config)
+            for event_id in applied_events:
+                print(
+                    f"Scheduled rank event applied: {event_id}",
+                    flush=True,
+                )
+            if args.apply_events_only:
+                return
             refresh_once(args)
         except Exception as exc:
             print(
@@ -276,6 +400,8 @@ def main() -> None:
             if interval == 0:
                 raise
 
+        if args.apply_events_only:
+            return
         if interval == 0:
             return
         elapsed = time.monotonic() - started_at

@@ -18,6 +18,23 @@ Set-Location $ToolRoot
 $env:PYTHONUTF8 = "1"
 $env:PYTHONUNBUFFERED = "1"
 
+function Stop-ProcessTree {
+    param([int]$ProcessId)
+
+    Get-CimInstance Win32_Process -Filter "ParentProcessId=$ProcessId" |
+        ForEach-Object { Stop-ProcessTree -ProcessId $_.ProcessId }
+    Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+}
+
+# Scheduled Task stop can leave the Python child behind. Keep one updater only.
+Get-CimInstance Win32_Process |
+    Where-Object {
+        $_.Name -eq "python.exe" -and
+        $_.CommandLine -like "*$Updater*" -and
+        $_.CommandLine -like "*--interval 300*"
+    } |
+    ForEach-Object { Stop-ProcessTree -ProcessId $_.ProcessId }
+
 $Process = Start-Process -FilePath $Python `
     -ArgumentList @(
         $Updater,

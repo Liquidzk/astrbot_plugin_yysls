@@ -1,6 +1,8 @@
 import unittest
 
 from src.models import (
+    Period,
+    RankBoard,
     aggregate_entries,
     compact_duration,
     format_duration_seconds,
@@ -8,6 +10,7 @@ from src.models import (
     lookup_duration_rank,
     parse_entries,
     parse_query_duration,
+    precise_duration,
     select_latest_four_periods,
 )
 
@@ -99,22 +102,56 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(aggregates[0].duration_label, "7:11-7:15")
         self.assertEqual(aggregates[0].team_count, 5)
 
-    def test_aggregation_closes_after_current_second_reaches_twenty(self):
+    def test_aggregation_keeps_a_large_same_second_in_one_segment(self):
         values = [
             {
                 "rank": rank,
                 "teamName": f"队伍{rank}",
-                "durationStr": "7分11秒" if rank <= 30 else "7分12秒",
+                "durationStr": f"4:44.{(rank - 21) * 17:03d}",
                 "snapshotTime": "20260723130000",
             }
-            for rank in range(21, 41)
+            for rank in range(21, 71)
         ]
 
         aggregates = aggregate_entries(parse_entries(values))
 
         self.assertEqual(len(aggregates), 1)
-        self.assertEqual(aggregates[0].rank_label, "21-40")
-        self.assertEqual(aggregates[0].team_count, 20)
+        self.assertEqual(aggregates[0].rank_label, "21-70")
+        self.assertEqual(aggregates[0].duration_label, "4:44")
+        self.assertEqual(aggregates[0].team_count, 50)
+
+    def test_aggregation_closes_after_whole_second_pushes_count_over_twenty(self):
+        second_counts = (
+            ("7:35", 7),
+            ("7:36", 7),
+            ("7:37", 8),
+            ("7:38", 7),
+            ("7:39", 7),
+            ("7:40", 8),
+        )
+        values = []
+        rank = 21
+        for second, count in second_counts:
+            for millisecond in range(count):
+                values.append(
+                    {
+                        "rank": rank,
+                        "teamName": f"队伍{rank}",
+                        "durationStr": f"{second}.{millisecond:03d}",
+                        "snapshotTime": "20260723130000",
+                    }
+                )
+                rank += 1
+
+        aggregates = aggregate_entries(parse_entries(values))
+
+        self.assertEqual(len(aggregates), 2)
+        self.assertEqual(aggregates[0].rank_label, "21-42")
+        self.assertEqual(aggregates[0].duration_label, "7:35-7:37")
+        self.assertEqual(aggregates[0].team_count, 22)
+        self.assertEqual(aggregates[1].rank_label, "43-64")
+        self.assertEqual(aggregates[1].duration_label, "7:38-7:40")
+        self.assertEqual(aggregates[1].team_count, 22)
 
     def test_challenge_uses_six_second_span(self):
         values = [
@@ -171,8 +208,66 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(aggregates[0].rank_label, "21-30")
         self.assertEqual(aggregates[0].team_count, 10)
 
+    def test_board_collapses_tail_slower_than_one_point_five_times_first(self):
+        values = [
+            {
+                "rank": 1,
+                "teamName": "第一名",
+                "durationStr": "4:00.500",
+                "snapshotTime": "20260723130000",
+            }
+        ]
+        values.extend(
+            {
+                "rank": rank,
+                "teamName": f"队伍{rank}",
+                "durationStr": f"5:00.{rank:03d}",
+                "snapshotTime": "20260723130000",
+            }
+            for rank in range(2, 21)
+        )
+        for rank, duration in enumerate(
+            ("5:57.000", "5:58.000", "5:59.000", "6:00.000", "6:00.900"),
+            start=21,
+        ):
+            values.append(
+                {
+                    "rank": rank,
+                    "teamName": f"队伍{rank}",
+                    "durationStr": duration,
+                    "snapshotTime": "20260723130000",
+                }
+            )
+        values.extend(
+            {
+                "rank": rank,
+                "teamName": f"队伍{rank}",
+                "durationStr": f"6:{rank - 25:02d}.000",
+                "snapshotTime": "20260723130000",
+            }
+            for rank in range(26, 41)
+        )
+        board = RankBoard(
+            period=Period.from_api(period(1, 1, 1, 1)),
+            entries=parse_entries(values),
+        )
+
+        aggregates = board.aggregate_tail()
+
+        self.assertEqual(len(aggregates), 2)
+        self.assertEqual(aggregates[0].rank_label, "21-25")
+        self.assertEqual(aggregates[0].duration_label, "5:57-6:00")
+        self.assertEqual(aggregates[1].rank_label, "26-40")
+        self.assertEqual(aggregates[1].duration_label, "6:01-6:15")
+        self.assertEqual(aggregates[1].team_count, 15)
+
     def test_compacts_duration(self):
         self.assertEqual(compact_duration("7分11秒"), "7:11")
+
+    def test_preserves_milliseconds_for_precise_duration(self):
+        self.assertEqual(precise_duration("7:11.042"), "7:11.042")
+        self.assertEqual(precise_duration("1:03:22.398"), "1:03:22.398")
+        self.assertEqual(precise_duration("7分11秒"), "7:11")
 
     def test_parses_query_duration(self):
         self.assertEqual(parse_query_duration("7:11"), 431)

@@ -1,11 +1,12 @@
 import json
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 from yysls_rank_tool.snapshot import (
+    apply_due_scheduled_events,
     convert_entries,
-    default_config_path,
     load_board_specs,
     write_snapshot_atomic,
 )
@@ -13,7 +14,29 @@ from yysls_rank_tool.snapshot import (
 
 class SnapshotTests(unittest.TestCase):
     def test_phase_two_rank_mapping(self):
-        boards = load_board_specs(default_config_path())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "ranks.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "periodOrder": 2,
+                        "five": {
+                            "dungeonName": "沧流走虺",
+                            "normalRankId": 63,
+                            "challengeRankId": 60,
+                        },
+                        "ten": {
+                            "dungeonName": "风翎掠寒江",
+                            "normalRankId": 62,
+                            "challengeRankId": 59,
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            boards = load_board_specs(path)
+
         mapping = {
             (board.team_size_name, board.difficulty_name): board.rank_name
             for board in boards
@@ -29,6 +52,98 @@ class SnapshotTests(unittest.TestCase):
             },
         )
         self.assertEqual({board.period_order for board in boards}, {2})
+
+    def test_applies_due_small_rollover_once(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "ranks.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "periodOrder": 2,
+                        "five": {
+                            "dungeonName": "五人副本",
+                            "normalRankId": 63,
+                            "challengeRankId": 60,
+                        },
+                        "ten": {
+                            "dungeonName": "十人副本",
+                            "normalRankId": 62,
+                            "challengeRankId": 59,
+                        },
+                        "scheduledEvents": [
+                            {
+                                "id": "small-rollover",
+                                "at": "2026-07-24T06:00:00+08:00",
+                                "action": "incrementPeriodAndRankIds",
+                                "delta": 1,
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            applied = apply_due_scheduled_events(
+                path,
+                now=datetime.fromisoformat("2026-07-24T06:00:00+08:00"),
+            )
+            applied_again = apply_due_scheduled_events(
+                path,
+                now=datetime.fromisoformat("2026-07-24T07:00:00+08:00"),
+            )
+            payload = json.loads(path.read_text(encoding="utf-8"))
+
+            self.assertEqual(applied, ("small-rollover",))
+            self.assertEqual(applied_again, ())
+            self.assertEqual(payload["periodOrder"], 3)
+            self.assertEqual(payload["five"]["normalRankId"], 64)
+            self.assertEqual(payload["five"]["challengeRankId"], 61)
+            self.assertEqual(payload["ten"]["normalRankId"], 63)
+            self.assertEqual(payload["ten"]["challengeRankId"], 60)
+            self.assertIn(
+                "appliedAt",
+                payload["scheduledEvents"][0],
+            )
+
+    def test_does_not_apply_future_rollover(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "ranks.json"
+            payload = {
+                "periodOrder": 2,
+                "five": {
+                    "dungeonName": "五人副本",
+                    "normalRankId": 63,
+                    "challengeRankId": 60,
+                },
+                "ten": {
+                    "dungeonName": "十人副本",
+                    "normalRankId": 62,
+                    "challengeRankId": 59,
+                },
+                "scheduledEvents": [
+                    {
+                        "id": "future-rollover",
+                        "at": "2026-07-24T06:00:00+08:00",
+                        "action": "incrementPeriodAndRankIds",
+                    }
+                ],
+            }
+            path.write_text(
+                json.dumps(payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            applied = apply_due_scheduled_events(
+                path,
+                now=datetime.fromisoformat("2026-07-24T05:59:59+08:00"),
+            )
+
+            self.assertEqual(applied, ())
+            self.assertEqual(
+                json.loads(path.read_text(encoding="utf-8")),
+                payload,
+            )
 
     def test_rejects_invalid_rank_id(self):
         with tempfile.TemporaryDirectory() as temp_dir:

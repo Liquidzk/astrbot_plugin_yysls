@@ -3,7 +3,9 @@
 从燕云公开排行榜接口抓取完整榜单，生成 AstrBot 插件使用的稳定 JSON 快照。
 快照写入采用临时文件替换，不会让 Bot 读到半份数据。
 
-## 当前第 2 期
+> 注意：使用前第一步请先在 `rank-backend/yysls_rank_tool/collector.py` 中填入 `DEFAULT_PID`。
+
+## 榜单配置
 
 | 榜单 | rank_name |
 | --- | --- |
@@ -26,13 +28,41 @@
     "dungeonName": "风翎掠寒江",
     "normalRankId": 62,
     "challengeRankId": 59
-  }
+  },
+  "scheduledEvents": [
+    {
+      "id": "small-rollover-20260724-0600",
+      "at": "2026-07-24T06:00:00+08:00",
+      "action": "incrementPeriodAndRankIds",
+      "delta": 1
+    }
+  ]
 }
 ```
 
 第 1 期对应值为：五挑 59、五普 62、十挑 58、十普 61。切换期数时只需修改
 `ranks.json`；更新器每轮都会重新读取，无需重启 AstrBot。配置格式或编号无效时本轮
 更新失败，并保留上一份完整快照。
+
+## 定时小切榜
+
+`incrementPeriodAndRankIds` 会在 `at` 到期后将 `periodOrder` 和四个榜单 ID
+同时增加 `delta`。执行成功后事件会写入 `appliedAt`，因此服务重启也不会重复执行。
+时间必须使用带时区的 ISO 格式。
+
+当前机器已注册一次性任务 `Yanyun Rank Rollover 20260724 0600`，将在北京时间
+`2026-07-24 06:00` 停止旧抓取、应用事件并立即重启更新器。届时配置将变为：
+
+| 项目 | 切换后 |
+| --- | ---: |
+| `periodOrder` | 3 |
+| 五人普通 ID | 64 |
+| 五人挑战 ID | 61 |
+| 十人普通 ID | 63 |
+| 十人挑战 ID | 60 |
+
+更新器自身每轮也会补执行已到期事件，因此关机错过 06:00 后，下次启动仍会完成切榜。
+副本名称或 ID 不是整体递增的大切榜不要使用该动作，直接手动编辑 `ranks.json`。
 
 ## 初始化
 
@@ -51,7 +81,7 @@ py -m venv .venv
 当前数据量为十人榜各 500 队、五人榜各 750 队。
 
 `start-rank-updater.ps1` 每 5 分钟执行一轮，失败时保留上一份完整快照。当前机器通过
-`Yanyun Rank Updater` 开机任务运行该脚本。
+`Yanyun Rank Updater` 开机任务运行该脚本，并在启动时清理遗留的重复更新进程。
 
 ## 完整导出
 

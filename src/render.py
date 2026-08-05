@@ -9,7 +9,7 @@ from .models import (
     RankBoard,
     RankingEntry,
     RankSnapshot,
-    compact_duration,
+    precise_duration,
 )
 
 
@@ -333,7 +333,7 @@ class RankRenderer:
         )
         seconds = 3 if board.period.period_type == 1 else 6
         separator_text = (
-            f"21名以后 · ≥5队 · {seconds}秒跨度或20队封段"
+            f"21名后 · ≥5队 · {seconds}秒/整秒超20队封段 · 超首名1.5倍全并"
         )
         draw.text(
             (table_left + 18, separator_top + 8),
@@ -400,7 +400,7 @@ class RankRenderer:
         )
         draw.text(
             (duration_left + 12, top + 7),
-            compact_duration(entry.duration),
+            precise_duration(entry.duration),
             font=text_font,
             fill=self.TEXT,
         )
